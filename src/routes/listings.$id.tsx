@@ -68,7 +68,7 @@ function PropertyDetail() {
 
           <h2 className="mt-12 font-serif text-3xl">Features</h2>
           <ul className="mt-6 grid grid-cols-1 gap-3 md:grid-cols-2">
-            {property.features.map((f) => (
+            {property.features.map((f: string) => (
               <li key={f} className="flex items-center gap-3 rounded-xl bg-secondary/40 px-4 py-3 text-sm">
                 <span className="h-1.5 w-1.5 rounded-full bg-primary" />
                 {f}

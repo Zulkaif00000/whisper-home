@@ -1,6 +1,5 @@
-// Lovable AI Gateway proxy for the voice real-estate concierge.
-// No auth required; agents call from the browser.
-import { properties } from "../../data/properties";
+import { createFileRoute } from "@tanstack/react-router";
+import { properties } from "@/data/properties";
 
 const SYSTEM_PROMPT = `You are Aria, a warm, confident, professional real estate concierge for "Maison Estates", a global luxury real estate agency.
 
@@ -22,48 +21,60 @@ CATALOG (use these and only these):
 ${properties
   .map(
     (p) =>
-      `• ${p.title} — ${p.type} in ${p.location}, ${p.beds} bd / ${p.baths} ba, ${p.area} sqft, $${p.price.toLocaleString()}. ${p.description}`,
+      `- ${p.title} — ${p.type} in ${p.location}, ${p.beds} bd / ${p.baths} ba, ${p.area} sqft, $${p.price.toLocaleString()}. ${p.description}`,
   )
   .join("\n")}
 `;
 
-export const ServerRoute = {
-  POST: async ({ request }: { request: Request }) => {
-    const apiKey = process.env.LOVABLE_API_KEY;
-    if (!apiKey) {
-      return new Response(JSON.stringify({ error: "AI not configured" }), { status: 500 });
-    }
+export const Route = createFileRoute("/api/chat")({
+  server: {
+    handlers: {
+      POST: async ({ request }) => {
+        const apiKey = process.env.LOVABLE_API_KEY;
+        if (!apiKey) {
+          return new Response(JSON.stringify({ error: "AI not configured" }), {
+            status: 500,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
 
-    let body: { messages?: Array<{ role: string; content: string }> } = {};
-    try {
-      body = await request.json();
-    } catch {
-      return new Response(JSON.stringify({ error: "Invalid JSON" }), { status: 400 });
-    }
-    const userMessages = Array.isArray(body.messages) ? body.messages.slice(-12) : [];
+        let body: { messages?: Array<{ role: string; content: string }> } = {};
+        try {
+          body = await request.json();
+        } catch {
+          return new Response(JSON.stringify({ error: "Invalid JSON" }), { status: 400 });
+        }
+        const userMessages = Array.isArray(body.messages) ? body.messages.slice(-12) : [];
 
-    const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
+        const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: "google/gemini-2.5-flash",
+            messages: [{ role: "system", content: SYSTEM_PROMPT }, ...userMessages],
+          }),
+        });
+
+        if (!res.ok) {
+          const text = await res.text();
+          const status = res.status === 429 || res.status === 402 ? res.status : 500;
+          return new Response(JSON.stringify({ error: text || "AI request failed" }), {
+            status,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+
+        const data = (await res.json()) as {
+          choices?: Array<{ message?: { content?: string } }>;
+        };
+        const reply = data?.choices?.[0]?.message?.content ?? "";
+        return new Response(JSON.stringify({ reply }), {
+          headers: { "Content-Type": "application/json" },
+        });
       },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
-        messages: [{ role: "system", content: SYSTEM_PROMPT }, ...userMessages],
-      }),
-    });
-
-    if (!res.ok) {
-      const text = await res.text();
-      const status = res.status === 429 || res.status === 402 ? res.status : 500;
-      return new Response(JSON.stringify({ error: text || "AI request failed" }), { status });
-    }
-
-    const data = await res.json();
-    const reply: string = data?.choices?.[0]?.message?.content ?? "";
-    return new Response(JSON.stringify({ reply }), {
-      headers: { "Content-Type": "application/json" },
-    });
+    },
   },
-};
+});
