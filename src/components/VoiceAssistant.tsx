@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
 
 type Msg = { role: "user" | "assistant"; content: string };
 
@@ -89,23 +90,24 @@ export function VoiceAssistant() {
       setMessages(next);
       setThinking(true);
       try {
-        const res = await fetch("/api/chat", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ messages: next }),
+        const { data, error } = await supabase.functions.invoke("chat", {
+          body: { messages: next },
         });
-        if (!res.ok) {
-          const errText = res.status === 429
-            ? "I'm getting a lot of calls right now — give me a moment and try again."
-            : res.status === 402
-              ? "Our AI service needs a top-up. Please reach out to our team directly."
-              : "I had trouble connecting just now. Mind trying that again?";
+        if (error) {
+          const status = (error as { context?: { status?: number } }).context?.status;
+          const errText =
+            status === 429
+              ? "I'm getting a lot of calls right now — give me a moment and try again."
+              : status === 402
+                ? "Our AI service needs a top-up. Please reach out to our team directly."
+                : "I had trouble connecting just now. Mind trying that again?";
           setMessages((m) => [...m, { role: "assistant", content: errText }]);
           speak(errText);
           return;
         }
-        const data = (await res.json()) as { reply: string };
-        const reply = data.reply?.trim() || "I'm not sure I caught that — could you say it again?";
+        const reply =
+          (data as { reply?: string })?.reply?.trim() ||
+          "I'm not sure I caught that — could you say it again?";
         setMessages((m) => [...m, { role: "assistant", content: reply }]);
         speak(reply);
       } catch {
